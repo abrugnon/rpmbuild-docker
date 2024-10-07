@@ -1,0 +1,93 @@
+#!/bin/bash
+print_usage() {
+  echo "$0 [-t template] [-h|?] -d project_directory -- extra args"
+}
+set -xe
+
+CURDIR=$(dirname $(readlink -f $0))
+echo "Building from ${CURDIR}"
+
+PROJECT=default
+SKIPDEPENDENCIES=0
+# Use getopt
+DESTDIR=$CURDIR/RPMS
+TEMPLATE=templates/centos7.Dockerfile
+# Parse short options
+
+while getopts "?ht:p:d:o:s" opt ; do
+  case "$opt" in
+    "h"|"?")
+        print_usage
+        exit 0
+        ;;
+    "t")
+        TEMPLATE=$OPTARG
+        ;;
+    --)
+        shift
+        break
+        ;;
+    "p"|"d")
+      # remove trailing slash
+      PROJECT=${OPTARG%/}
+      ;;
+    "o")
+      DESTDIR=$OPTARG
+      ;;
+    "s")
+      SKIPDEPENDENCIES=1
+  esac
+done
+
+shift $(expr $OPTIND - 1)
+# The remaining is options for rpmbuild
+BUILD_ARGS=$@
+
+#exit
+export PROJECT=$PROJECT
+
+# extra arguments for rpmbuild (get it from cmdline)
+export EXTRA_ARGS="--define 'python3_pkgversion 34'"
+
+SPEC=$(find $PROJECT/SPECS/ -name *.spec | head -n 1)
+
+# Clean local directory and recreate
+rm -rf ${CURDIR}/.build/rpm
+mkdir -p ${CURDIR}/.build/rpm/{output,SRPMS,SPECS,RPMS/noarch,docker}
+chmod -R 777 ${CURDIR}/.build
+
+# replace in template
+sed -e "s|#SPEC#|${SPEC}|g" ${TEMPLATE} > ${CURDIR}/.build/${PROJECT}.dock
+
+
+# Copy usefull data to container volume
+cp -r ${CURDIR}/${PROJECT}/SOURCES ${CURDIR}/.build/rpm
+cp -r ${CURDIR}/${PROJECT}/SPECS ${CURDIR}/.build/rpm
+
+# apply our build recipe
+# avoid this step if possible
+
+docker build -f ${CURDIR}/.build/${PROJECT}.dock -t ${PROJECT}.buildrpm ${CURDIR} --build-arg SKIPDEPENDENCIES=$SKIPDEPENDENCIES || exit 1
+# else
+#   export SKIPDEPENDENCIES=$SKIPDEPENDENCIES
+#   docker build -f ${CURDIR}/.build/${PROJECT}.dock -t ${PROJECT}.buildrpm ${CURDIR} || exit 1
+# fi
+
+# run the RPM  build with volatile storage
+# if [ $SKIPDEPENDENCIES -eq 0 ]; then
+#   export SKIPDEPENDENCIES=$SKIPDEPENDENCIES
+docker run --rm -e PROJECT=${PROJECT} -v $CURDIR/.build:/data   ${PROJECT}.buildrpm ${BUILD_ARGS} 
+# else
+#   export SKIPDEPENDENCIES=$SKIPDEPENDENCIES
+#   docker run --rm -e PROJECT=${PROJECT} -v $CURDIR/.build:/data  ${PROJECT}.skipbuild ${BUILD_ARGS}
+# fi
+
+
+if [ "$(ls -A  $CURDIR/.build/rpm/output)" ]; then
+   echo "Copying successfully built RPMS"
+   cp ${CURDIR}/.build/rpm/output/*.rpm  ${DESTDIR}
+   exit 0
+else
+   echo "Empty"
+   exit 1
+fi
