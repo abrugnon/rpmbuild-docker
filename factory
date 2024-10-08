@@ -68,19 +68,10 @@ cp -r ${CURDIR}/${PROJECT}/SPECS ${CURDIR}/.build/rpm
 # avoid this step if possible
 
 docker build -f ${CURDIR}/.build/${PROJECT}.dock -t ${PROJECT}.buildrpm ${CURDIR} --build-arg SKIPDEPENDENCIES=$SKIPDEPENDENCIES || exit 1
-# else
-#   export SKIPDEPENDENCIES=$SKIPDEPENDENCIES
-#   docker build -f ${CURDIR}/.build/${PROJECT}.dock -t ${PROJECT}.buildrpm ${CURDIR} || exit 1
-# fi
 
 # run the RPM  build with volatile storage
-# if [ $SKIPDEPENDENCIES -eq 0 ]; then
-#   export SKIPDEPENDENCIES=$SKIPDEPENDENCIES
+
 docker run --rm -e PROJECT=${PROJECT} -v $CURDIR/.build:/data   ${PROJECT}.buildrpm ${BUILD_ARGS} 
-# else
-#   export SKIPDEPENDENCIES=$SKIPDEPENDENCIES
-#   docker run --rm -e PROJECT=${PROJECT} -v $CURDIR/.build:/data  ${PROJECT}.skipbuild ${BUILD_ARGS}
-# fi
 
 
 if [ "$(ls -A  $CURDIR/.build/rpm/output)" ]; then
